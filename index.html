@@ -52,7 +52,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:13p
 #upload-zone:hover,#upload-zone.uz-hover{border-color:var(--accent);background:var(--ad);}
 
 /* ── MAIN ── */
-.main{flex:1;display:flex;flex-direction:column;overflow:hidden;}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}
 .topbar{height:52px;background:var(--s1);border-bottom:1px solid var(--b1);display:flex;align-items:center;padding:0 24px;gap:12px;flex-shrink:0;}
 .tb-ti{font-size:15px;font-weight:700;color:var(--txt);}
 .tb-su{font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:1px;}
@@ -65,7 +65,7 @@ body{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:13p
 @keyframes fi{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 
 /* ── STAT CARDS ── */
-.srow{display:grid;gap:12px;margin-bottom:20px;}
+.srow{display:grid;gap:12px;margin-bottom:20px;min-width:0;}
 .s4{grid-template-columns:repeat(4,1fr);}.s3{grid-template-columns:repeat(3,1fr);}.s5{grid-template-columns:repeat(5,1fr);}
 .sc{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r10);padding:16px 18px;position:relative;overflow:hidden;transition:border-color .15s;}
 .sc:hover{border-color:var(--b3);}
@@ -264,7 +264,7 @@ tbody td.r{text-align:right;}
 /* ── USER BADGE ── */
 .user-badge{display:flex;align-items:center;gap:7px;padding:5px 10px;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r8);font-size:11px;}
 .user-dot{width:7px;height:7px;border-radius:50%;background:var(--green);}
-.user-email{font-family:var(--mono);color:var(--dim);font-size:10px;}
+.user-badge{max-width:220px;}.user-email{font-family:var(--mono);color:var(--dim);font-size:10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .signout-btn{background:none;border:none;color:var(--dim);cursor:pointer;font-size:10px;font-family:var(--mono);padding:0 0 0 6px;}
 .signout-btn:hover{color:var(--red);}
 
@@ -284,6 +284,24 @@ tbody td.r{text-align:right;}
 
 /* ── SETUP BANNER ── */
 .setup-banner{background:var(--ad);border:1px solid var(--ab);border-radius:var(--r8);padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px;font-size:12px;}
+
+/* ── EMPTY STATE ── */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:48px 24px;color:var(--dim);}
+.empty-state-icon{font-size:32px;margin-bottom:12px;opacity:.35;}
+.empty-state-text{font-size:13px;font-weight:600;margin-bottom:4px;color:var(--dim);}
+.empty-state-sub{font-size:11px;color:var(--dim);opacity:.7;}
+/* ── PREVENT CONTENT OVERFLOW ── */
+.sec{min-width:0;overflow:hidden;}
+.tw{min-width:0;}
+table{min-width:0;}
+/* ── COMPACT TOPBAR ── */
+.topbar{height:52px!important;}
+.tb-ti{font-size:15px!important;}
+/* ── FIX STAT CARDS ON NARROW SCREENS ── */
+.s4{grid-template-columns:repeat(4,minmax(0,1fr));}
+.s3{grid-template-columns:repeat(3,minmax(0,1fr));}
+.s5{grid-template-columns:repeat(5,minmax(0,1fr));}
+.sc-v{font-size:22px!important;}
 </style>
 </head>
 <body>
@@ -1735,7 +1753,7 @@ function renderLedger() {
   const type=document.getElementById('led-type')?.value||'';
   let rows=ledger.filter(l=>{if(q&&!l.product.toLowerCase().includes(q)&&!(l.ref||'').toLowerCase().includes(q))return false;if(type&&l.type!==type)return false;return true;});
   const tb=document.getElementById('led-table');if(!tb)return;
-  if(!rows.length){tb.innerHTML='<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--dim)">No ledger entries yet.</td></tr>';return;}
+  if(!rows.length){tb.innerHTML='<tr><td colspan="7"><div class="empty-state"><div class="empty-state-icon">📒</div><div class="empty-state-text">No ledger entries yet</div><div class="empty-state-sub">Create POs and SOs to see movements</div></div></td></tr>';return;}
   const ti={PO_INWARD:{l:'PO Inward',c:'bg2'},DISPATCH:{l:'Dispatch',c:'br'},QC_REJECT:{l:'QC Reject',c:'bo'},QC_RETURN:{l:'QC→Stock',c:'ba'},ADJUSTMENT:{l:'Adjustment',c:'bd'}};
   tb.innerHTML=rows.map(l=>{const t=ti[l.type]||{l:l.type,c:'bd'};const dc=l.delta>0?'var(--green)':'var(--red)';return `<tr>
     <td class="mono" style="font-size:10px;color:var(--dim)">${fmtTS(l.ts)}</td>
@@ -1760,7 +1778,7 @@ function renderPO() {
   const sf=document.getElementById('po-sf')?.value||'';
   let rows=pos.filter(p=>{if(q&&!p.id.toLowerCase().includes(q)&&!p.supplier.toLowerCase().includes(q))return false;if(sf&&p.status!==sf)return false;return true;});
   const tb=document.getElementById('po-table');if(!tb)return;
-  if(!rows.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--dim)">No POs yet.</td></tr>';return;}
+  if(!rows.length){tb.innerHTML='<tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-text">No purchase orders yet</div><div class="empty-state-sub">Click "+ New PO" to create one</div></div></td></tr>';return;}
   tb.innerHTML=rows.map(p=>`<tr>
     <td class="mono" style="color:var(--accent);font-weight:700;cursor:pointer" onclick="viewPO('${p.id}')">${p.id}</td>
     <td style="font-weight:600">${esc(p.supplier)}</td>
@@ -2068,7 +2086,7 @@ function renderSO() {
   const sf=document.getElementById('so-sf')?.value||'';
   let rows=sos.filter(s=>{if(q&&!s.id.toLowerCase().includes(q)&&!s.customer.toLowerCase().includes(q))return false;if(sf&&s.status!==sf)return false;return true;});
   const tb=document.getElementById('so-table');if(!tb)return;
-  if(!rows.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--dim)">No SOs yet.</td></tr>';return;}
+  if(!rows.length){tb.innerHTML='<tr><td colspan="9"><div class="empty-state"><div class="empty-state-icon">🧾</div><div class="empty-state-text">No sales orders yet</div><div class="empty-state-sub">Click "+ New Sales Order" to create one</div></div></td></tr>';return;}
   tb.innerHTML=rows.map((so)=>`<tr>
     <td class="mono" style="color:var(--accent);font-weight:700;cursor:pointer" onclick="viewSO('${so.id}')">${so.id}</td>
     <td style="font-weight:600">${esc(so.customer)}</td>
@@ -2291,7 +2309,7 @@ function renderCustomers() {
     <div class="sc r"><div class="sc-l">Outstanding</div><div class="sc-v" style="font-size:18px">${fmt(totalOutstanding)}</div></div>
     <div class="sc g"><div class="sc-l">With GSTIN</div><div class="sc-v">${customers.filter(c=>c.gstin).length}</div></div>`;
   const tb=document.getElementById('cust-table');if(!tb)return;
-  if(!list.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--dim)">No customers yet.</td></tr>';return;}
+  if(!list.length){tb.innerHTML='<tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">🏢</div><div class="empty-state-text">No customers yet</div><div class="empty-state-sub">Click "+ Add Customer" to get started</div></div></td></tr>';return;}
   tb.innerHTML=list.map(c=>{
     const soCount=sos.filter(s=>s.customerId===c.id||s.customer===c.name).length;
     const outstanding=getCustomerOutstanding(c.id);
@@ -2374,7 +2392,7 @@ function renderSuppliers() {
     <div class="sc g"><div class="sc-l">With GSTIN</div><div class="sc-v">${suppliers.filter(s=>s.gstin).length}</div></div>
     <div class="sc o"><div class="sc-l">Active POs</div><div class="sc-v">${pos.filter(p=>['Created','Confirmed','Shipped'].includes(p.status)).length}</div></div>`;
   const tb=document.getElementById('supp-table');if(!tb)return;
-  if(!list.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--dim)">No suppliers yet.</td></tr>';return;}
+  if(!list.length){tb.innerHTML='<tr><td colspan="8"><div class="empty-state"><div class="empty-state-icon">🏭</div><div class="empty-state-text">No suppliers yet</div><div class="empty-state-sub">Click "+ Add Supplier" to get started</div></div></td></tr>';return;}
   tb.innerHTML=list.map(s=>`<tr>
     <td style="font-weight:700">${esc(s.name)}</td>
     <td style="font-size:11px">${esc(s.contact||'—')}<br><span style="color:var(--dim);font-size:10px">${esc(s.phone||'')}</span></td>
