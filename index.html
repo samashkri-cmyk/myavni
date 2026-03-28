@@ -437,6 +437,7 @@ table{min-width:0;}
             <th style="padding:6px 10px;font-family:var(--mono);font-size:9px;color:var(--dim);background:var(--s2);border-bottom:1px solid var(--b1);text-align:right">Old Stock</th>
             <th style="padding:6px 10px;font-family:var(--mono);font-size:9px;color:var(--dim);background:var(--s2);border-bottom:1px solid var(--b1);text-align:right">New Stock</th>
             <th style="padding:6px 10px;font-family:var(--mono);font-size:9px;color:var(--dim);background:var(--s2);border-bottom:1px solid var(--b1);text-align:right">Δ</th>
+            <th style="padding:6px 10px;font-family:var(--mono);font-size:9px;color:var(--dim);background:var(--s2);border-bottom:1px solid var(--b1)">Formula (Op−Out+In−QC)</th>
           </tr></thead>
           <tbody id="upload-preview-rows"></tbody>
         </table>
@@ -1842,7 +1843,7 @@ async function createPO() {
   });
   document.getElementById('poi-list').innerHTML='';poIN=0;
   if(suppSel)suppSel.value='';
-  closeModal('m-newpo');renderAll();showToast(`✓ ${id} created`,'s');
+  closeModal('m-upload');renderAll();showToast('\u2713 '+applied+' SKUs updated from sheet','s');
 }
 
 function viewPO(id) {
@@ -2685,19 +2686,34 @@ function parseStockCSV(text) {
     cols.push(cur.trim());
     rows.push(cols);
   }
-  var closingCol=133;var hdr=rows[0]||[];
-  for(var c=hdr.length-1;c>=0;c--){
-    if((hdr[c]||'').toLowerCase().includes('closing stock')){closingCol=c;break;}
+  var hdr=rows[0]||[];
+  var openingCol=4,outwardCol=-1,inwardCol=-1,qcCol=-1,closingCol=-1;
+  for(var c=0;c<hdr.length;c++){
+    var h=(hdr[c]||'').toLowerCase().trim();
+    if(h==='outward'&&outwardCol<0)outwardCol=c;
+    if(h==='inward'&&inwardCol<0)inwardCol=c;
+    if(h==='qc reject'&&qcCol<0)qcCol=c;
+    if(h.includes('closing stock')&&!h.includes('reverse')&&closingCol<0)closingCol=c;
   }
+  if(outwardCol<0)outwardCol=129;
+  if(inwardCol<0)inwardCol=130;
+  if(qcCol<0)qcCol=131;
+  if(closingCol<0)closingCol=133;
+  function toNum(v){var n=parseFloat(String(v||'').replace(/,/g,'').trim());return isNaN(n)?0:n;}
   var map={};
   for(var ri=2;ri<rows.length;ri++){
     var row=rows[ri];
     var name=(row[0]||'').replace(/"/g,'').trim();
     var sku=(row[1]||'').replace(/"/g,'').trim();
     if(!name)continue;
-    var rawStock=(row[closingCol]||'').replace(/,/g,'').trim();
-    var stockVal=parseInt(rawStock);
-    if(!isNaN(stockVal))map[name]={sku,stock:stockVal};
+    var opening=toNum(row[openingCol]);
+    var outward=toNum(row[outwardCol]);
+    var inward=toNum(row[inwardCol]);
+    var qcReject=toNum(row[qcCol]);
+    var computed=opening-outward+inward-qcReject;
+    var sheetClosing=toNum(row[closingCol]);
+    var finalStock=(opening===0&&outward===0&&inward===0&&qcReject===0&&sheetClosing>0)?sheetClosing:computed;
+    map[name]={sku,stock:Math.round(finalStock),opening,outward,inward,qcReject,sheetClosing,computed};
   }
   return map;
 }
@@ -2705,43 +2721,108 @@ function parseStockXLSX(wb) {
   var sheets=wb.SheetNames.filter(function(s){return !s.toLowerCase().includes('summary');});
   var ws=wb.Sheets[sheets[0]||wb.SheetNames[0]];
   var raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
-  var closingCol=-1;
-  for(var r=0;r<Math.min(3,raw.length);r++){
-    var row=raw[r]||[];
-    for(var c=row.length-1;c>=0;c--){
-      if(String(row[c]||'').toLowerCase().includes('closing stock')){closingCol=c;break;}
-    }
-    if(closingCol>=0)break;
+  var hdr=raw[0]||[];
+  var openingCol=4,outwardCol=-1,inwardCol=-1,qcCol=-1,closingCol=-1;
+  for(var c=0;c<hdr.length;c++){
+    var h=String(hdr[c]||'').toLowerCase().trim();
+    if(h==='outward'&&outwardCol<0)outwardCol=c;
+    if(h==='inward'&&inwardCol<0)inwardCol=c;
+    if(h==='qc reject'&&qcCol<0)qcCol=c;
+    if(h.includes('closing stock')&&!h.includes('reverse')&&closingCol<0)closingCol=c;
   }
+  if(outwardCol<0)outwardCol=129;
+  if(inwardCol<0)inwardCol=130;
+  if(qcCol<0)qcCol=131;
   if(closingCol<0){var nc=(raw[0]||[]).length;closingCol=nc>=140?133:nc>=130?128:nc-6;}
+  function toNum(v){var n=parseFloat(String(v||'').replace(/,/g,'').trim());return isNaN(n)?0:n;}
   var map={};
   for(var ri=2;ri<raw.length;ri++){
     var row=raw[ri];if(!row)continue;
     var name=String(row[0]||'').replace(/\n/g,' ').trim();
     var sku=String(row[1]||'').replace(/\n/g,' ').trim();
     if(!name)continue;
-    var v=parseFloat(String(row[closingCol]||'').replace(/,/g,''));
-    if(!isNaN(v))map[name]={sku,stock:Math.round(v)};
+    var opening=toNum(row[openingCol]);
+    var outward=toNum(row[outwardCol]);
+    var inward=toNum(row[inwardCol]);
+    var qcReject=toNum(row[qcCol]);
+    var computed=opening-outward+inward-qcReject;
+    var sheetClosing=toNum(row[closingCol]);
+    var finalStock=(opening===0&&outward===0&&inward===0&&qcReject===0&&sheetClosing>0)?sheetClosing:computed;
+    map[name]={sku,stock:Math.round(finalStock),opening,outward,inward,qcReject,sheetClosing,computed};
   }
   return map;
 }
-function buildUploadPreview(newStockMap,filename) {
+function buildUploadPreview(newStockMap, filename) {
   pendingStockUpdate={date:new Date().toLocaleDateString('en-IN'),updates:[],newStockMap,filename};
-  let matched=0,changed=0;const updates=[];
-  Object.entries(newStockMap).forEach(([name,data])=>{const oldStock=stock[name];if(oldStock===undefined)return;matched++;if(data.stock!==oldStock){changed++;updates.push({name,sku:data.sku||'',oldStock,newStock:data.stock,delta:data.stock-oldStock});}});
+  var matched=0,changed=0,updates=[];
+  Object.entries(newStockMap).forEach(function(entry){
+    var name=entry[0],data=entry[1];
+    var oldStock=stock[name];
+    if(oldStock===undefined)return;
+    matched++;
+    if(data.stock!==oldStock){changed++;updates.push({name,sku:data.sku||'',oldStock,newStock:data.stock,delta:data.stock-oldStock});}
+  });
   pendingStockUpdate.updates=updates;
   document.getElementById('upload-processing').style.display='none';
   document.getElementById('upload-preview-area').style.display='block';
   document.getElementById('upload-modal-foot').style.display='flex';
-  document.getElementById('upload-summary-chips').innerHTML=`<span class="badge ba">${Object.keys(newStockMap).length} parsed</span><span class="badge bg2">${matched} matched</span><span class="badge ${changed>0?'bo':'bd'}">${changed} changed</span><span class="badge bd" style="font-size:9px">${filename}</span>`;
-  const preview=updates.slice(0,10);
-  document.getElementById('upload-preview-rows').innerHTML=preview.length?preview.map(u=>{const dc=u.delta>0?'var(--green)':'var(--red)';return `<tr style="border-bottom:1px solid var(--b1)"><td style="padding:7px 10px;font-size:11px;font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(u.name)}">${esc(u.name)}</td><td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--dim)">${fmtN(u.oldStock)}</td><td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:${dc};font-weight:700">${fmtN(u.newStock)}</td><td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:${dc}">${u.delta>0?'+':''}${fmtN(u.delta)}</td></tr>`;}).join(''):'<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--dim);font-size:11px">No stock changes detected</td></tr>';
+  document.getElementById('upload-summary-chips').innerHTML=
+    '<span class="badge ba">'+Object.keys(newStockMap).length+' parsed</span> '
+    +'<span class="badge bg2">'+matched+' matched</span> '
+    +'<span class="badge '+(changed>0?'bo':'bd')+'">'+changed+' changed</span> '
+    +'<span class="badge bd" style="font-size:9px">'+filename+'</span>';
+  var preview=updates.slice(0,10);
+  if(!preview.length){
+    document.getElementById('upload-preview-rows').innerHTML='<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--dim);font-size:11px">No stock changes detected</td></tr>';
+    return;
+  }
+  var html='';
+  preview.forEach(function(u){
+    var dc=u.delta>0?'var(--green)':'var(--red)';
+    var ns=newStockMap[u.name];
+    var fStr=ns?(ns.opening+' - '+ns.outward+' + '+ns.inward+' - '+ns.qcReject+' = '+ns.computed):'';
+    html+='<tr style="border-bottom:1px solid var(--b1)">'
+      +'<td style="padding:7px 10px;font-size:11px;font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(u.name)+'</td>'
+      +'<td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--dim)">'+fmtN(u.oldStock)+'</td>'
+      +'<td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:'+dc+';font-weight:700">'+fmtN(u.newStock)+'</td>'
+      +'<td style="padding:7px 10px;text-align:right;font-family:var(--mono);font-size:11px;color:'+dc+'">'+(u.delta>0?'+':'')+fmtN(u.delta)+'</td>'
+      +'<td style="padding:7px 10px;font-family:var(--mono);font-size:9px;color:var(--dim)">'+fStr+'</td>'
+      +'</tr>';
+  });
+  document.getElementById('upload-preview-rows').innerHTML=html;
 }
+
 async function confirmSheetUpload() {
   if(!pendingStockUpdate)return;
   const {updates,newStockMap,date,filename}=pendingStockUpdate;
-  let applied=0;
-  const upserts=[];
+function renderPP() {
+  var ppq=((document.getElementById('pp-q')||{}).value||'').toLowerCase();
+  var ppcat=(document.getElementById('pp-cat')||{}).value||'';
+  var items=PRODS.filter(function(p){
+    if(ppq&&!p.name.toLowerCase().includes(ppq)&&!p.sku.toLowerCase().includes(ppq)&&!(p.desc||'').toLowerCase().includes(ppq))return false;
+    if(ppcat&&p.cat!==ppcat)return false;
+    return true;
+  }).slice(0,60);
+  var ppel=document.getElementById('pp-grid');
+  if(!ppel)return;
+  if(!items.length){ppel.innerHTML='<div style="text-align:center;padding:30px;color:var(--dim)">No products match.</div>';return;}
+  var html='';
+  for(var pi=0;pi<items.length;pi++){
+    var p=items[pi];
+    var st=getStock(p.name);var fc=sCol(st);
+    html+='<div class="pc" style="padding:10px;cursor:pointer" onclick="addSOIWithProd(PRODS.find(function(x){return x.sku==='+JSON.stringify(p.sku)+';}))">';
+    html+='<div style="font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.name)+'</div>';
+    html+='<div style="font-family:var(--mono);font-size:10px;color:var(--accent)">'+esc(p.sku)+'</div>';
+    html+='<div style="font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(p.size||p.desc||'')+'</div>';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">';
+    html+='<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">'+fmt(p.mrp)+'</div>';
+    html+='<div style="font-family:var(--mono);font-size:11px;font-weight:700;color:'+fc+'">'+(st==null?'--':fmtN(st))+'</div>';
+    html+='</div>';
+    if(p.tax_pct>0)html+='<span class="badge bo" style="font-size:9px;margin-top:4px">'+p.tax_pct+'% GST</span>';
+    html+='</div>';
+  }
+  ppel.innerHTML=html;
+}
   Object.entries(newStockMap).forEach(([name,data])=>{if(stock[name]!==undefined){stock[name]=data.stock;applied++;upserts.push({name,sku:data.sku||null,current_stock:data.stock,updated_at:new Date().toISOString()});}});
   // Batch upsert to DB
   if(upserts.length){
@@ -2750,10 +2831,10 @@ async function confirmSheetUpload() {
     const snapshotRows=upserts.map(u=>{const p=pendingStockUpdate.newStockMap[u.name];return {snapshot_date:today(),product_name:u.name,sku:u.sku,closing_stock:u.current_stock};});
     await _supabase.from('stock_snapshots').upsert(snapshotRows,{onConflict:'snapshot_date,product_name'}).then(()=>{}).catch(e=>console.warn(e));
   }
-  document.getElementById('upload-status-label').innerHTML=`✓ ${applied} SKUs updated<br>${date} · ${filename}`;
+  document.getElementById('upload-status-label').innerHTML='\u2713 '+applied+' SKUs updated<br>'+date+'   '+filename;
   document.getElementById('upload-status-label').style.color='var(--green)';
   pendingStockUpdate=null;
-  closeModal('m-upload');renderAll();showToast(`✓ ${applied} SKUs updated from sheet`,'s');
+  closeModal('m-upload');renderAll();showToast('Stock updated: '+applied+' SKUs from sheet','s');
 }
 
 // ══════════════════════════════════════════════════
