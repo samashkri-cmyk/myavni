@@ -695,7 +695,7 @@ table{min-width:0;}
     </div>
     <div class="mfoot">
       <button class="btn btn-o" onclick="closeModal('m-newpo')">Cancel</button>
-      <button class="btn btn-a" onclick="createPO()">Create PO →</button>
+      <button class="btn btn-a" onclick="this.disabled=true;this.textContent='Saving...';createPO().finally(()=>{this.disabled=false;this.textContent='Create PO →';})">Create PO →</button>
     </div>
   </div>
 </div>
@@ -767,7 +767,7 @@ table{min-width:0;}
     </div>
     <div class="mfoot">
       <button class="btn btn-o" onclick="closeModal('m-newso')">Cancel</button>
-      <button class="btn btn-a" onclick="createSO()">Confirm Order →</button>
+      <button class="btn btn-a" onclick="this.disabled=true;this.textContent='Saving...';createSO().finally(()=>{this.disabled=false;this.textContent='Confirm Order →';})">Confirm Order →</button>
     </div>
   </div>
 </div>
@@ -940,7 +940,7 @@ table{min-width:0;}
     </div>
     <div class="mfoot">
       <button class="btn btn-o" onclick="closeModal('m-cust')">Cancel</button>
-      <button class="btn btn-a" onclick="saveCustomer()">Save Customer</button>
+      <button class="btn btn-a" onclick="this.disabled=true;this.textContent='Saving...';saveCustomer().finally(()=>{this.disabled=false;this.textContent='Save Customer';})">Save Customer</button>
     </div>
   </div>
 </div>
@@ -983,7 +983,7 @@ table{min-width:0;}
     </div>
     <div class="mfoot">
       <button class="btn btn-o" onclick="closeModal('m-supp')">Cancel</button>
-      <button class="btn btn-a" onclick="saveSupplier()">Save Supplier</button>
+      <button class="btn btn-a" onclick="this.disabled=true;this.textContent='Saving...';saveSupplier().finally(()=>{this.disabled=false;this.textContent='Save Supplier';})">Save Supplier</button>
     </div>
   </div>
 </div>
@@ -1316,6 +1316,7 @@ async function reloadInventory() {
   renderInv(); updateBadges();
 }
 async function reloadPOs() {
+  if(document.getElementById('m-newpo')?.classList.contains('on')) return;
   // Minimal reload — just refresh pos array
   const poRows = await _supabase.from('purchase_orders').select('*').order('created_at',{ascending:false}).then(r=>r.data||[]);
   const poItemRows = await _supabase.from('po_items').select('*').then(r=>r.data||[]);
@@ -1333,6 +1334,7 @@ async function reloadPOs() {
   renderPO(); updateBadges();
 }
 async function reloadSOs() {
+  if(document.getElementById('m-newso')?.classList.contains('on')) return;
   const soRows = await _supabase.from('sales_orders').select('*').order('created_at',{ascending:false}).then(r=>r.data||[]);
   const soItemRows = await _supabase.from('so_items').select('*').then(r=>r.data||[]);
   const siBySO={};
@@ -1366,6 +1368,8 @@ async function reloadPayments() {
   renderReceivables(); updateBadges();
 }
 async function reloadCustomers() {
+  // Don't reload if customer modal is open (prevents duplicate during save)
+  if(document.getElementById('m-cust')?.classList.contains('on')) return;
   customers = await db.get('customers');
   renderCustomers(); updateBadges();
 }
@@ -1529,6 +1533,13 @@ const fmtDate = d => { if(!d)return'—';try{const dt=new Date(d+'T00:00:00');re
 const fmtTS = ts => { const d=new Date(ts);return d.getDate()+' '+MONTHS[d.getMonth()]+' '+d.getFullYear()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); };
 const today = () => new Date().toISOString().split('T')[0];
 const uid = pre => pre+'-'+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,5).toUpperCase();
+function uuidv4() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0;
+    var v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
 const getStock = name => stock[name]??null;
 const sCol = n => n==null?'var(--dim)':n<=0?'var(--red)':n<=10?'var(--orange)':'var(--green)';
 const sSt = n => n==null?'N/A':n<=0?'Out of Stock':n<=10?'Low Stock':'In Stock';
@@ -1813,6 +1824,8 @@ function addPOI(){
 function recalcPO(){document.getElementById('poi-total-qty').textContent=fmtN([...document.querySelectorAll('[id^="poi-q-"]')].reduce((a,e)=>a+(parseInt(e.value)||0),0));}
 
 async function createPO() {
+  if(_saving){showToast('Please wait...','e');return;}
+  _saving=true;
   const suppSel=document.getElementById('po-supp-select');
   const suppId=suppSel?.value||'';
   const supp=suppliers.find(s=>s.id===suppId);
@@ -2031,6 +2044,8 @@ function recalcSO(){
 }
 
 async function createSO() {
+  if(_saving){showToast('Please wait...','e');return;}
+  _saving=true;
   const custSel=document.getElementById('so-cust-select');
   const custId=custSel?.value||'';
   const cust=customers.find(c=>c.id===custId);
@@ -2357,11 +2372,21 @@ function openCustModal(id) {
   openModal('m-cust');
 }
 
+// ── SAVE GUARD: prevents double-saves on fast clicks ──
+let _saving = false;
+function guardedSave(fn) {
+  if(_saving) { console.warn('Save already in progress, ignoring duplicate call'); return; }
+  _saving = true;
+  Promise.resolve(fn()).finally(() => { setTimeout(() => { _saving = false; }, 1500); });
+}
+
 async function saveCustomer() {
+  if(_saving){showToast('Please wait...','e');return;}
+  _saving=true;
   const name=document.getElementById('cm-name').value.trim();
-  if(!name){showToast('Customer name required','e');return;}
+  if(!name){_saving=false;showToast('Customer name required','e');return;}
   const editId=document.getElementById('cm-edit-id').value;
-  const data={id:editId||uid('CUST'),name,
+  const data={id:editId||uuidv4(),name,
     contact:document.getElementById('cm-contact').value.trim(),
     gstin:document.getElementById('cm-gstin').value.trim().toUpperCase(),
     pan:document.getElementById('cm-pan').value.trim().toUpperCase(),
@@ -2377,6 +2402,7 @@ async function saveCustomer() {
   if(editId){const i=customers.findIndex(x=>x.id===editId);if(i>=0)customers[i]=data;}
   else customers.unshift(data);
   await withSync(()=>dbSaveCustomer(data));
+  _saving=false;
   closeModal('m-cust');renderCustomers();updateBadges();
   showToast(editId?'✓ Customer updated':'✓ Customer added','s');
 }
@@ -2426,10 +2452,12 @@ function openSuppModal(id) {
 }
 
 async function saveSupplier() {
+  if(_saving){showToast('Please wait...','e');return;}
+  _saving=true;
   const name=document.getElementById('sm-name').value.trim();
-  if(!name){showToast('Supplier name required','e');return;}
+  if(!name){_saving=false;showToast('Supplier name required','e');return;}
   const editId=document.getElementById('sm-edit-id').value;
-  const data={id:editId||uid('SUPP'),name,
+  const data={id:editId||uuidv4(),name,
     contact:document.getElementById('sm-contact').value.trim(),
     gstin:document.getElementById('sm-gstin').value.trim().toUpperCase(),
     pan:document.getElementById('sm-pan').value.trim().toUpperCase(),
@@ -2444,6 +2472,7 @@ async function saveSupplier() {
   if(editId){const i=suppliers.findIndex(x=>x.id===editId);if(i>=0)suppliers[i]=data;}
   else suppliers.unshift(data);
   await withSync(()=>dbSaveSupplier(data));
+  _saving=false;
   closeModal('m-supp');renderSuppliers();updateBadges();
   showToast(editId?'✓ Supplier updated':'✓ Supplier added','s');
 }
@@ -2793,8 +2822,40 @@ function buildUploadPreview(newStockMap, filename) {
 }
 
 async function confirmSheetUpload() {
-  if(!pendingStockUpdate)return;
-  const {updates,newStockMap,date,filename}=pendingStockUpdate;
+  if(!pendingStockUpdate){ showToast('No upload pending','e'); return; }
+  const {newStockMap, date, filename} = pendingStockUpdate;
+  showLoading('Applying stock update...');
+  try {
+    var upserts = [];
+    Object.entries(newStockMap).forEach(function(entry) {
+      var name = entry[0], data = entry[1];
+      if(stock[name] !== undefined) {
+        stock[name] = data.stock;
+        upserts.push({name: name, sku: data.sku||null, current_stock: data.stock, updated_at: new Date().toISOString()});
+      }
+    });
+    if(upserts.length) {
+      await _supabase.from('inventory').upsert(upserts, {onConflict:'name'});
+      // Save daily snapshot
+      var snapshots = upserts.map(function(u) {
+        return {snapshot_date: today(), product_name: u.name, sku: u.sku, closing_stock: u.current_stock};
+      });
+      await _supabase.from('stock_snapshots').upsert(snapshots, {onConflict:'snapshot_date,product_name'});
+    }
+    hideLoading();
+    document.getElementById('upload-status-label').innerHTML = 'Updated '+upserts.length+' SKUs<br>'+date;
+    document.getElementById('upload-status-label').style.color = 'var(--green)';
+    pendingStockUpdate = null;
+    closeModal('m-upload');
+    renderAll();
+    showToast('Stock updated: '+upserts.length+' SKUs applied', 's');
+  } catch(e) {
+    hideLoading();
+    console.error('Confirm upload error:', e);
+    showToast('Error applying update: '+e.message, 'e');
+  }
+}
+
 function renderPP() {
   var ppq=((document.getElementById('pp-q')||{}).value||'').toLowerCase();
   var ppcat=(document.getElementById('pp-cat')||{}).value||'';
@@ -2823,43 +2884,10 @@ function renderPP() {
   }
   ppel.innerHTML=html;
 }
-  Object.entries(newStockMap).forEach(([name,data])=>{if(stock[name]!==undefined){stock[name]=data.stock;applied++;upserts.push({name,sku:data.sku||null,current_stock:data.stock,updated_at:new Date().toISOString()});}});
-  // Batch upsert to DB
-  if(upserts.length){
-    await _supabase.from('inventory').upsert(upserts,{onConflict:'name'}).then(()=>{}).catch(e=>console.warn('Inventory batch upsert warn:',e));
-    // Also save snapshot
-    const snapshotRows=upserts.map(u=>{const p=pendingStockUpdate.newStockMap[u.name];return {snapshot_date:today(),product_name:u.name,sku:u.sku,closing_stock:u.current_stock};});
-    await _supabase.from('stock_snapshots').upsert(snapshotRows,{onConflict:'snapshot_date,product_name'}).then(()=>{}).catch(e=>console.warn(e));
-  }
-  document.getElementById('upload-status-label').innerHTML='\u2713 '+applied+' SKUs updated<br>'+date+'   '+filename;
-  document.getElementById('upload-status-label').style.color='var(--green)';
-  pendingStockUpdate=null;
-  closeModal('m-upload');renderAll();showToast('Stock updated: '+applied+' SKUs from sheet','s');
-}
 
 // ══════════════════════════════════════════════════
 //  PRODUCT PICKER
 // ══════════════════════════════════════════════════
-function renderPP() {
-  const q=(document.getElementById('pp-q')?.value||'').toLowerCase();
-  const cat=document.getElementById('pp-cat')?.value||'';
-  let items=PRODS.filter(p=>{if(q&&!p.name.toLowerCase().includes(q)&&!p.sku.toLowerCase().includes(q)&&!p.desc.toLowerCase().includes(q))return false;if(cat&&p.cat!==cat)return false;return true;}).slice(0,60);
-  const el=document.getElementById('pp-grid');if(!el)return;
-  el.innerHTML=items.map(p=>{
-    const st=getStock(p.name);const fc=sCol(st);
-    return `<div class="pc" onclick="addSOIWithProd(PRODS.find(x=>x.sku==='${esc(p.sku)}'))" style="padding:10px;cursor:pointer">
-      <div style="font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(p.name)}">${esc(p.name)}</div>
-      <div style="font-family:var(--mono);font-size:10px;color:var(--accent)">${p.sku}</div>
-      <div style="font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(p.size||p.desc)||'—'}</div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">
-        <div style="font-family:var(--mono);font-size:13px;font-weight:700;color:var(--green)">${fmt(p.mrp)}</div>
-        <div style="font-family:var(--mono);font-size:11px;font-weight:700;color:${fc}">${st==null?'—':fmtN(st)}</div>
-      </div>
-      ${p.tax_pct>0?`<span class="badge bo" style="font-size:9px;margin-top:4px">${p.tax_pct}% GST</span>`:''}
-    </div>`;
-  }).join('')||'<div style="text-align:center;padding:30px;color:var(--dim)">No products match.</div>';
-}
-
 // ══════════════════════════════════════════════════
 //  BOOT
 // ══════════════════════════════════════════════════
